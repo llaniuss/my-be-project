@@ -1,0 +1,29 @@
+services:
+  db:
+    image: postgres:16
+    container_name: rpg_db
+    restart: always
+    environment:
+      POSTGRES_USER: rpg
+      POSTGRES_PASSWORD: rpg
+      POSTGRES_DB: rpg
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  app:
+    build: .                     
+    container_name: rpg_app
+    restart: always
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"              
+    environment:
+      DATABASE_URL: postgresql+asyncpg://rpg:rpg@db:5432/rpg
+    depends_on:
+      - db
+
+volumes:
+  pgdata:

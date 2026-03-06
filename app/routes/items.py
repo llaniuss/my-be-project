@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
 from app.database import get_db
 from app import models, schemas
 
@@ -7,98 +9,133 @@ router = APIRouter(prefix="/items", tags=["items"])
 
 # CREATE
 @router.post("/", response_model=schemas.Item)
-def create_item(item: schemas.ItemCreate, db: Session = Depends(get_db)):
-    db_item = models.Item(name=item.name, owner_id=item.owner_id)
+async def create_item(item: schemas.ItemCreate, db: AsyncSession = Depends(get_db)):
+    character = await db.get(models.Character, item.character_id)
+
+    if not character:
+        raise HTTPException(status_code=404, detail="Character not found")
+
+    db_item = models.Item(
+        name=item.name, 
+        character_id=item.character_id
+    )
+
     db.add(db_item)
-    db.commit()
-    db.refresh(db_item)
+    
+    await db.commit()
+    await db.refresh(db_item)
+
     return db_item
 
 # READ ALL
 @router.get("/", response_model=list[schemas.Item])
-def get_items(
-    owner_id: int | None = Query(default=None),
+async def get_items(
+    character_id: int | None = Query(default=None),
     name_contains: str | None = Query(default=None),
     sort: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    query = db.query(models.Item)
+    query = select(models.Item)
 
     # Фильтр по owner
-    if owner_id is not None:
-        query = query.filter(models.Item.owner_id == owner_id)
+    if character_id is not None:
+        query = query.where(models.Item.character_id == character_id)
 
     # Фильтр по имени
     if name_contains:
-        query = query.filter(models.Item.name.ilike(f"%{name_contains}%"))
+        query = query.where(models.Item.name.ilike(f"%{name_contains}%"))
 
     # Сортировка
     if sort:
-        if sort.startswith("-"):
-            query = query.order_by(getattr(models.Item, sort[1:]).desc())
-        else:
-            query = query.order_by(getattr(models.Item, sort).asc())
+        field = sort.lstrip("-")
+        if not hasattr(models.Item, field):
+            raise HTTPException(status_code=400, detail="Invalid sort field")
+        column = getattr(models.Item, field)
+        query = query.order_by(column.desc() if sort.startswith("-") else column.asc())
 
     # Пагинация
     query = query.offset(offset).limit(limit)
 
-    return query.all()
+    result = await db.execute(query)
+
+    return result.scalars().unique().all()
 
 # READ ONE
 @router.get("/{item_id}", response_model=schemas.Item)
-def get_item(item_id: int, db: Session = Depends(get_db)):
-    item = db.query(models.Item).filter(models.Item.id == item_id).first()
+async def get_item(item_id: int, db: AsyncSession = Depends(get_db)):
+    item = await db.get(models.Item, item_id)
+
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
+    
     return item
 
 # UPDATE
 @router.put("/{item_id}", response_model=schemas.Item)
-def update_item(item_id: int, updated_item: schemas.ItemCreate, db: Session = Depends(get_db)):
-    item = db.query(models.Item).filter(models.Item.id == item_id).first()
+async def update_item(
+    item_id: int,
+    updated_item: schemas.ItemCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    item = await db.get(models.Item, item_id)
+
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
+
+    character = await db.get(models.Character, updated_item.character_id)
+
+    if not character:
+        raise HTTPException(status_code=404, detail="Character not found")
+
     item.name = updated_item.name
-    item.owner_id = updated_item.owner_id
-    db.commit()
-    db.refresh(item)
+    item.character_id = updated_item.character_id
+
+    await db.commit()
+    await db.refresh(item)
+
     return item
 
 # DELETE
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_item(item_id: int, db: Session = Depends(get_db)):
-    item = db.query(models.Item).filter(models.Item.id == item_id).first()
+async def delete_item(item_id: int, db: AsyncSession = Depends(get_db)):
+    item = await db.get(models.Item, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
-    db.delete(item)
-    db.commit()
+    await db.delete(item)
+    await db.commit()
 
-# READ USERS' ITEMS
-@router.get("/by_user/{user_id}", response_model=list[schemas.Item])
-def get_items_by_user(
-    user_id: int,
-    name_contains: str | None = Query(default=None, description="Filter items containing this string in name"),
-    sort: str | None = Query(default=None, description="Sort by field, e.g. 'name' or '-name'"),
-    db: Session = Depends(get_db)
+# READ CHARACTERS' ITEMS
+@router.get("/by_character/{character_id}", response_model=list[schemas.Item])
+async def get_items_by_character(
+    character_id: int,
+    name_contains: str | None = Query(default=None),
+    sort: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db)
 ):
-    user = db.query(models.User).filter(models.User.id == user_id).first()
-    if user is None:
-        raise HTTPException(status_code=404, detail="User not found")
+    character = await db.get(models.Character, character_id)
 
-    query = db.query(models.Item).filter(models.Item.owner_id == user_id)
+    if character is None:
+        raise HTTPException(status_code=404, detail="Character not found")
 
-    # Фильтр по имени
+    query = select(models.Item).where(models.Item.character_id == character_id)
+
     if name_contains:
-        query = query.filter(models.Item.name.ilike(f"%{name_contains}%"))
+        query = query.where(models.Item.name.ilike(f"%{name_contains}%"))
 
-    # Сортировка
     if sort:
-        if sort.startswith("-"):
-            field_name = sort[1:]
-            query = query.order_by(getattr(models.Item, field_name).desc())
-        else:
-            query = query.order_by(getattr(models.Item, sort).asc())
+        field = sort.lstrip("-")
 
-    return query.all()
+        if not hasattr(models.Item, field):
+            raise HTTPException(status_code=400, detail="Invalid sort field")
+
+        column = getattr(models.Item, field)
+
+        query = query.order_by(
+            column.desc() if sort.startswith("-") else column.asc()
+        )
+
+    result = await db.execute(query)
+
+    return result.scalars().unique().all()

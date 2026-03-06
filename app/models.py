@@ -10,14 +10,31 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String, index=True)
+    
+    character = relationship("Character", back_populates="user", cascade="all, delete-orphan")
 
-    items = relationship("Item", back_populates="owner")
 
 class Item(Base):
     __tablename__ = "items"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String, index=True)
-    owner_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"))
+    character_id: Mapped[int] = mapped_column(Integer, ForeignKey("characters.id"))
 
-    owner = relationship("User", back_populates="items")
+    owner = relationship("Character", back_populates="items")
+
+
+class Character(Base):
+    __tablename__ = "characters"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String, index=True)
+    
+    level: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    health: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
+    exp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"))
+
+    items = relationship("Item", back_populates="owner", cascade="all, delete-orphan")
+    user = relationship("User", back_populates="character")
