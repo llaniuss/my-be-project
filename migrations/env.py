@@ -2,8 +2,7 @@ import asyncio
 import os
 from logging.config import fileConfig
 
-from app.database import Base
-from app.models import User, Character, Item
+from app.models import Base, User, Character, Item
 
 from sqlalchemy import pool, engine_from_config
 from sqlalchemy.engine import Connection

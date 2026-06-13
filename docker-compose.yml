@@ -4,9 +4,9 @@ services:
     container_name: rpg_db
     restart: always
     environment:
-      POSTGRES_USER: rpg
-      POSTGRES_PASSWORD: rpg
-      POSTGRES_DB: rpg
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:
@@ -22,6 +22,8 @@ services:
       - "8000:8000"              
     environment:
       DATABASE_URL: postgresql+asyncpg://rpg:rpg@db:5432/rpg
+    env_file:
+      - .env
     depends_on:
       - db
 

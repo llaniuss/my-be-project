@@ -1,7 +1,6 @@
 from fastapi import FastAPI
 
-from app.routes import users, items, characters
-from app.database import engine, Base
+from app.api.v1 import users, items, characters, monsters
 
 app = FastAPI()
 
@@ -19,3 +18,4 @@ async def ping():
 app.include_router(users.router)
 app.include_router(items.router)
 app.include_router(characters.router)
+app.include_router(monsters.router)
